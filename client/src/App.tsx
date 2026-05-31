@@ -19,6 +19,8 @@ import type {
 } from './types'
 
 type SeverityBand = 'critical' | 'urgent' | 'stable'
+type ActiveView = 'queue' | 'departments' | 'routing' | 'chat'
+type WizardStep = 1 | 2 | 3 | 4 | 5
 
 type FormState = {
   name: string
@@ -28,6 +30,17 @@ type FormState = {
   chiefComplaint: string
   symptoms: string[]
   vitals: Record<keyof PatientVitals, string>
+  height: string
+  weight: string
+  painScale: number
+  medicalHistory: string[]
+  medications: string
+  allergies: string
+  surgeries: string
+  familyHistory: string[]
+  smoking: 'Never' | 'Former' | 'Current' | ''
+  alcohol: 'None' | 'Occasional' | 'Regular' | ''
+  exercise: 'Sedentary' | 'Light' | 'Moderate' | 'Active' | ''
 }
 
 type ChatMessage = {
@@ -36,22 +49,100 @@ type ChatMessage = {
   text: string
 }
 
-const symptomCatalog = [
-  'chest pain',
-  'breathlessness',
-  'fever',
-  'dizziness',
-  'vomiting',
-  'slurred speech',
-  'weakness',
-  'bleeding',
-  'wheezing',
-  'palpitations',
-  'trauma',
-  'dehydration',
-]
+type SymptomDomainDef = { label: string; symptoms: { name: string; severity: SeverityBand }[] }
 
-const navigationItems = ['Queue', 'Departments', 'Routing', 'AI Chat']
+const navigationItems: ActiveView[] = ['queue', 'departments', 'routing', 'chat']
+const navLabels: Record<ActiveView, string> = {
+  queue: 'Queue',
+  departments: 'Departments',
+  routing: 'Routing',
+  chat: 'AI Chat',
+}
+
+const symptomDomains: SymptomDomainDef[] = [
+  {
+    label: 'Cardiovascular',
+    symptoms: [
+      { name: 'Chest pain', severity: 'critical' },
+      { name: 'Palpitations', severity: 'urgent' },
+      { name: 'Sweating', severity: 'urgent' },
+      { name: 'Edema', severity: 'stable' },
+      { name: 'Exercise intolerance', severity: 'stable' },
+    ],
+  },
+  {
+    label: 'Respiratory',
+    symptoms: [
+      { name: 'Breathlessness', severity: 'critical' },
+      { name: 'Wheezing', severity: 'urgent' },
+      { name: 'Cough', severity: 'stable' },
+      { name: 'Sputum production', severity: 'stable' },
+      { name: 'Sleep apnea', severity: 'stable' },
+    ],
+  },
+  {
+    label: 'Neurological',
+    symptoms: [
+      { name: 'Slurred speech', severity: 'critical' },
+      { name: 'Facial droop', severity: 'critical' },
+      { name: 'Seizure', severity: 'critical' },
+      { name: 'Dizziness', severity: 'urgent' },
+      { name: 'Headache', severity: 'urgent' },
+      { name: 'Weakness', severity: 'urgent' },
+      { name: 'Memory issues', severity: 'stable' },
+      { name: 'Sensory changes', severity: 'stable' },
+    ],
+  },
+  {
+    label: 'Gastrointestinal',
+    symptoms: [
+      { name: 'Abdominal pain', severity: 'urgent' },
+      { name: 'Vomiting', severity: 'urgent' },
+      { name: 'Nausea', severity: 'stable' },
+      { name: 'Diarrhea', severity: 'stable' },
+      { name: 'Constipation', severity: 'stable' },
+      { name: 'Loss of appetite', severity: 'stable' },
+    ],
+  },
+  {
+    label: 'Musculoskeletal',
+    symptoms: [
+      { name: 'Fracture / Injury', severity: 'urgent' },
+      { name: 'Joint pain', severity: 'stable' },
+      { name: 'Muscle pain', severity: 'stable' },
+      { name: 'Stiffness', severity: 'stable' },
+      { name: 'Swelling', severity: 'stable' },
+    ],
+  },
+  {
+    label: 'Physical / General',
+    symptoms: [
+      { name: 'Bleeding', severity: 'critical' },
+      { name: 'Trauma', severity: 'urgent' },
+      { name: 'Fever', severity: 'urgent' },
+      { name: 'Dehydration', severity: 'urgent' },
+      { name: 'Fatigue', severity: 'stable' },
+    ],
+  },
+  {
+    label: 'Mental Health',
+    symptoms: [
+      { name: 'Emotional distress', severity: 'urgent' },
+      { name: 'Anxiety', severity: 'stable' },
+      { name: 'Depression', severity: 'stable' },
+      { name: 'Stress', severity: 'stable' },
+      { name: 'Sleep disturbance', severity: 'stable' },
+    ],
+  },
+  {
+    label: 'Genitourinary',
+    symptoms: [
+      { name: 'Flank pain', severity: 'urgent' },
+      { name: 'Painful urination', severity: 'stable' },
+      { name: 'Urinary frequency', severity: 'stable' },
+    ],
+  },
+]
 
 const defaultForm: FormState = {
   name: 'Sajida Bano',
@@ -59,7 +150,7 @@ const defaultForm: FormState = {
   sex: 'Female',
   arrivalMode: 'Wheelchair',
   chiefComplaint: 'Sudden chest tightness with sweating and dizziness',
-  symptoms: ['chest pain', 'breathlessness', 'dizziness'],
+  symptoms: ['Chest pain', 'Breathlessness', 'Dizziness'],
   vitals: {
     heartRate: '122',
     spo2: '92',
@@ -68,6 +159,17 @@ const defaultForm: FormState = {
     temperature: '37.2',
     respiratoryRate: '29',
   },
+  height: '',
+  weight: '',
+  painScale: 5,
+  medicalHistory: [],
+  medications: '',
+  allergies: '',
+  surgeries: '',
+  familyHistory: [],
+  smoking: '',
+  alcohol: '',
+  exercise: '',
 }
 
 function App() {
@@ -88,6 +190,13 @@ function App() {
   const [assessing, setAssessing] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [clock, setClock] = useState(() => new Date())
+  const [activeView, setActiveView] = useState<ActiveView>('queue')
+  const [wizardStep, setWizardStep] = useState<WizardStep>(1)
+  const [openDomains, setOpenDomains] = useState<Set<string>>(new Set(['Cardiovascular', 'Respiratory']))
+  const [globalChatMessages, setGlobalChatMessages] = useState<ChatMessage[]>([
+    { id: 'ai-init', role: 'ai', text: 'KGMU AI Command Hub ready. Ask about queue status, department load, critical patients, or triage protocols.' },
+  ])
+  const [globalChatInput, setGlobalChatInput] = useState('')
 
   const deferredSearch = useDeferredValue(search)
 
@@ -210,14 +319,55 @@ function App() {
         </div>
       </header>
 
-      <div className="command-shell">
+      {(dashboard?.alerts ?? []).length > 0 ? (
+        <div className="alerts-strip">
+          {(dashboard?.alerts ?? []).map((alert) => (
+            <div key={alert.id} className={`alert-pill alert-pill--${alert.tone}`}>
+              <span className="alert-pill__dot" />
+              <strong>{alert.title}</strong>: {alert.description}
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {dashboard?.metrics ? (
+        <div className="metrics-bar">
+          <div className="metrics-bar__item">
+            <span className="metrics-bar__label">Total Queue</span>
+            <span className="metrics-bar__value">{dashboard.metrics.totalQueue}</span>
+          </div>
+          <div className="metrics-bar__item">
+            <span className="metrics-bar__label">Monitored</span>
+            <span className="metrics-bar__value">{dashboard.metrics.monitoredPatients}</span>
+          </div>
+          <div className="metrics-bar__item">
+            <span className="metrics-bar__label">Escalation Rate</span>
+            <span className="metrics-bar__value">{dashboard.metrics.escalationRate}%</span>
+          </div>
+          <div className="metrics-bar__item">
+            <span className="metrics-bar__label">Routed / Hr</span>
+            <span className="metrics-bar__value">{dashboard.metrics.routedThisHour}</span>
+          </div>
+          <div className="metrics-bar__item">
+            <span className="metrics-bar__label">Avg Wait</span>
+            <span className="metrics-bar__value">{dashboard.metrics.avgWaitMinutes}m</span>
+          </div>
+        </div>
+      ) : null}
+
+      <div className={`command-shell${activeView !== 'queue' ? ' command-shell--wide' : ''}`}>
         <aside className="sidebar">
           <div className="sidebar__section">
             <div className="section-label">Navigation</div>
             <nav className="sidebar-nav">
               {navigationItems.map((item) => (
-                <button key={item} className="nav-button" type="button">
-                  {item}
+                <button
+                  key={item}
+                  className={`nav-button${activeView === item ? ' nav-button--active' : ''}`}
+                  type="button"
+                  onClick={() => setActiveView(item)}
+                >
+                  {navLabels[item]}
                 </button>
               ))}
             </nav>
@@ -265,108 +415,122 @@ function App() {
           </div>
         </aside>
 
-        <main className="queue-panel">
-          <div className="queue-panel__header">
-            <div>
-              <div className="section-label">Patient Priority Queue</div>
-              <h1>Live Queue</h1>
+        {activeView === 'queue' ? (
+          <main className="queue-panel">
+            <div className="queue-panel__header">
+              <div>
+                <div className="section-label">Patient Priority Queue</div>
+                <h1>Live Queue</h1>
+              </div>
+              <div className="queue-panel__tools">
+                <input
+                  className="search-input"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="SEARCH PATIENT / COMPLAINT / DEPARTMENT"
+                />
+              </div>
             </div>
-            <div className="queue-panel__tools">
-              <input
-                className="search-input"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="SEARCH PATIENT / COMPLAINT / DEPARTMENT"
-              />
+
+            <div className="section-divider" />
+
+            {error ? <div className="system-notice">{error}</div> : null}
+
+            <div className="queue-headings">
+              <span>Priority</span>
+              <span>Patient</span>
+              <span>Chief Complaint</span>
+              <span>Vitals</span>
+              <span>Wait</span>
             </div>
-          </div>
 
-          <div className="section-divider" />
+            <div className="queue-list">
+              {loading && !dashboard ? (
+                <div className="queue-empty">LOADING QUEUE...</div>
+              ) : null}
 
-          {error ? <div className="system-notice">{error}</div> : null}
+              {!loading && queue.length === 0 ? (
+                <div className="queue-empty">NO PATIENTS MATCH THE CURRENT FILTER.</div>
+              ) : null}
 
-          <div className="queue-headings">
-            <span>Priority</span>
-            <span>Patient</span>
-            <span>Chief Complaint</span>
-            <span>Vitals</span>
-            <span>Wait</span>
-          </div>
+              {queue.map((patient) => {
+                const band = getSeverityBand(patient)
+                const selected = selectedPatient?.id === patient.id
+                const pulsating = patient.id === topCriticalId && band === 'critical'
 
-          <div className="queue-list">
-            {loading && !dashboard ? (
-              <div className="queue-empty">LOADING QUEUE...</div>
-            ) : null}
+                return (
+                  <button
+                    key={patient.id}
+                    className={[
+                      'queue-row',
+                      `queue-row--${band}`,
+                      selected ? 'queue-row--selected' : '',
+                      pulsating ? 'queue-row--pulse' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                    type="button"
+                    onClick={() => handleSelectPatient(patient.id)}
+                  >
+                    <div className="queue-row__priority">
+                      <span className={`severity-pill severity-pill--${band}`}>
+                        {severityLabel(band)}
+                      </span>
+                    </div>
+                    <div className="queue-row__patient">
+                      <strong>{patient.name}</strong>
+                      <span>
+                        {patient.age}/{abbreviateSex(patient.sex)} • {patient.id}
+                      </span>
+                    </div>
+                    <div className="queue-row__complaint" title={patient.chiefComplaint}>
+                      {patient.chiefComplaint}
+                    </div>
+                    <div className="queue-row__vitals">
+                      <VitalChip
+                        label="BP"
+                        value={`${patient.vitals.systolic}/${patient.vitals.diastolic}`}
+                        tone={vitalTone('bloodPressure', patient.vitals)}
+                      />
+                      <VitalChip
+                        label="HR"
+                        value={String(patient.vitals.heartRate)}
+                        tone={vitalTone('heartRate', patient.vitals)}
+                      />
+                      <VitalChip
+                        label="SpO₂"
+                        value={`${patient.vitals.spo2}%`}
+                        tone={vitalTone('spo2', patient.vitals)}
+                      />
+                      <VitalChip
+                        label="Temp"
+                        value={`${patient.vitals.temperature.toFixed(1)}`}
+                        tone={vitalTone('temperature', patient.vitals)}
+                      />
+                    </div>
+                    <div className="queue-row__wait">
+                      <strong>{patient.estimatedWaitMinutes}m</strong>
+                      <span>{formatRelative(patient.registeredAt)}</span>
+                    </div>
+                  </button>
+                )
+              })}
+            </div>
+          </main>
+        ) : activeView === 'departments' ? (
+          <DepartmentsView departments={dashboard?.departments ?? []} />
+        ) : activeView === 'routing' ? (
+          <RoutingView queue={dashboard?.queue ?? []} />
+        ) : (
+          <ChatViewPanel
+            messages={globalChatMessages}
+            input={globalChatInput}
+            onInputChange={setGlobalChatInput}
+            onSubmit={handleGlobalChatSubmit}
+          />
+        )}
 
-            {!loading && queue.length === 0 ? (
-              <div className="queue-empty">NO PATIENTS MATCH THE CURRENT FILTER.</div>
-            ) : null}
-
-            {queue.map((patient) => {
-              const band = getSeverityBand(patient)
-              const selected = selectedPatient?.id === patient.id
-              const pulsating = patient.id === topCriticalId && band === 'critical'
-
-              return (
-                <button
-                  key={patient.id}
-                  className={[
-                    'queue-row',
-                    `queue-row--${band}`,
-                    selected ? 'queue-row--selected' : '',
-                    pulsating ? 'queue-row--pulse' : '',
-                  ]
-                    .filter(Boolean)
-                    .join(' ')}
-                  type="button"
-                  onClick={() => handleSelectPatient(patient.id)}
-                >
-                  <div className="queue-row__priority">
-                    <span className={`severity-pill severity-pill--${band}`}>
-                      {severityLabel(band)}
-                    </span>
-                  </div>
-                  <div className="queue-row__patient">
-                    <strong>{patient.name}</strong>
-                    <span>
-                      {patient.age}/{abbreviateSex(patient.sex)} • {patient.id}
-                    </span>
-                  </div>
-                  <div className="queue-row__complaint" title={patient.chiefComplaint}>
-                    {patient.chiefComplaint}
-                  </div>
-                  <div className="queue-row__vitals">
-                    <VitalChip
-                      label="BP"
-                      value={`${patient.vitals.systolic}/${patient.vitals.diastolic}`}
-                      tone={vitalTone('bloodPressure', patient.vitals)}
-                    />
-                    <VitalChip
-                      label="HR"
-                      value={String(patient.vitals.heartRate)}
-                      tone={vitalTone('heartRate', patient.vitals)}
-                    />
-                    <VitalChip
-                      label="SpO₂"
-                      value={`${patient.vitals.spo2}%`}
-                      tone={vitalTone('spo2', patient.vitals)}
-                    />
-                    <VitalChip
-                      label="Temp"
-                      value={`${patient.vitals.temperature.toFixed(1)}`}
-                      tone={vitalTone('temperature', patient.vitals)}
-                    />
-                  </div>
-                  <div className="queue-row__wait">
-                    <strong>{patient.estimatedWaitMinutes}m</strong>
-                    <span>{formatRelative(patient.registeredAt)}</span>
-                  </div>
-                </button>
-              )
-            })}
-          </div>
-        </main>
-
+        {activeView === 'queue' ? (
         <aside className="detail-panel">
           {selectedPatient ? (
             <>
@@ -480,185 +644,241 @@ function App() {
             <div className="detail-empty">SELECT A PATIENT TO LOAD CLINICAL DETAIL.</div>
           )}
         </aside>
+        ) : null}
       </div>
 
       {isModalOpen ? (
         <div className="modal-overlay" role="presentation" onClick={handleCloseModal}>
           <div
-            className="modal-panel"
+            className="modal-panel modal-wizard"
             role="dialog"
             aria-modal="true"
-            aria-labelledby="new-patient-title"
+            aria-labelledby="wizard-title"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="modal-header">
+            <div className="wizard-header">
               <div>
                 <div className="section-label">New Patient Intake</div>
-                <h2 id="new-patient-title">Admit Patient</h2>
+                <h2 id="wizard-title">Admit Patient</h2>
               </div>
               <button className="modal-close" type="button" onClick={handleCloseModal}>
-                Close
+                ✕
               </button>
             </div>
 
-            <form className="modal-form" onSubmit={handleAdmitPatient}>
-              <label>
-                <span>Patient Name</span>
-                <input
-                  value={form.name}
-                  onChange={(event) => updateFormField('name', event.target.value)}
-                  required
-                />
-              </label>
+            <div className="wizard-stepper">
+              {([1, 2, 3, 4, 5] as WizardStep[]).map((step, idx) => (
+                <div
+                  key={step}
+                  className={`wizard-step${wizardStep === step ? ' wizard-step--active' : wizardStep > step ? ' wizard-step--done' : ''}`}
+                >
+                  <span className="wizard-step__dot">{wizardStep > step ? '✓' : step}</span>
+                  <span className="wizard-step__label">
+                    {['Basic Info', 'Symptoms', 'Vitals', 'History', 'Assess'][idx]}
+                  </span>
+                  {idx < 4 ? <span className="wizard-step__line" /> : null}
+                </div>
+              ))}
+            </div>
 
-              <div className="modal-form__row">
-                <label>
-                  <span>Age</span>
-                  <input
-                    type="number"
-                    min="0"
-                    max="120"
-                    value={form.age}
-                    onChange={(event) => updateFormField('age', event.target.value)}
-                    required
-                  />
-                </label>
-                <label>
-                  <span>Sex</span>
-                  <select
-                    value={form.sex}
-                    onChange={(event) =>
-                      updateFormField('sex', event.target.value as FormState['sex'])
-                    }
-                  >
-                    <option>Male</option>
-                    <option>Female</option>
-                    <option>Other</option>
-                  </select>
-                </label>
-              </div>
-
-              <div className="modal-form__row">
-                <label>
-                  <span>Arrival Mode</span>
-                  <select
-                    value={form.arrivalMode}
-                    onChange={(event) =>
-                      updateFormField('arrivalMode', event.target.value as ArrivalMode)
-                    }
-                  >
-                    <option>Walk-in</option>
-                    <option>Wheelchair</option>
-                    <option>Ambulance</option>
-                  </select>
-                </label>
-                <label>
-                  <span>Priority Preview</span>
-                  <div className={`priority-preview priority-preview--${modalBand}`}>
-                    {severityLabel(modalBand)}
+            <div className="wizard-body">
+              {wizardStep === 1 ? (
+                <div className="wizard-form">
+                  <label><span>Patient Name</span><input value={form.name} onChange={(e) => updateFormField('name', e.target.value)} required /></label>
+                  <div className="two-col">
+                    <label><span>Age</span><input type="number" min="0" max="120" value={form.age} onChange={(e) => updateFormField('age', e.target.value)} required /></label>
+                    <label><span>Sex</span><select value={form.sex} onChange={(e) => updateFormField('sex', e.target.value as FormState['sex'])}><option>Male</option><option>Female</option><option>Other</option></select></label>
                   </div>
-                </label>
-              </div>
-
-              <label>
-                <span>Chief Complaint</span>
-                <input
-                  value={form.chiefComplaint}
-                  onChange={(event) => updateFormField('chiefComplaint', event.target.value)}
-                  required
-                />
-              </label>
-
-              <div className="symptom-picker">
-                <span>Symptoms</span>
-                <div className="symptom-tags">
-                  {symptomCatalog.map((symptom) => {
-                    const active = form.symptoms.includes(symptom)
-
+                  <label><span>Arrival Mode</span><select value={form.arrivalMode} onChange={(e) => updateFormField('arrivalMode', e.target.value as ArrivalMode)}><option>Walk-in</option><option>Wheelchair</option><option>Ambulance</option></select></label>
+                  <label><span>Chief Complaint</span><input value={form.chiefComplaint} onChange={(e) => updateFormField('chiefComplaint', e.target.value)} required /></label>
+                  <div>
+                    <div className="step-section-label">Priority Preview</div>
+                    <div className={`priority-preview priority-preview--${modalBand}`}>{severityLabel(modalBand)}</div>
+                  </div>
+                </div>
+              ) : wizardStep === 2 ? (
+                <div className="wizard-form">
+                  <div className="step-section-label">Select all applicable symptoms</div>
+                  {symptomDomains.map((domain) => {
+                    const selectedInDomain = domain.symptoms.filter((s) => form.symptoms.includes(s.name)).length
+                    const isOpen = openDomains.has(domain.label)
                     return (
-                      <button
-                        key={symptom}
-                        className={[
-                          'symptom-tag',
-                          active ? `symptom-tag--active symptom-tag--${modalBand}` : '',
-                        ]
-                          .filter(Boolean)
-                          .join(' ')}
-                        type="button"
-                        onClick={() => toggleSymptom(symptom)}
-                      >
-                        {symptom}
-                      </button>
+                      <div key={domain.label} className="symptom-domain">
+                        <button className="symptom-domain__header" type="button" onClick={() => toggleDomain(domain.label)}>
+                          <span className="symptom-domain__title">
+                            {domain.label}
+                            {selectedInDomain > 0 ? <span className="symptom-domain__count">{selectedInDomain}</span> : null}
+                          </span>
+                          <span className={`symptom-domain__chevron${isOpen ? ' symptom-domain__chevron--open' : ''}`}>&#9660;</span>
+                        </button>
+                        {isOpen ? (
+                          <div className="symptom-domain-tags">
+                            {domain.symptoms.map((s) => {
+                              const active = form.symptoms.includes(s.name)
+                              return (
+                                <button
+                                  key={s.name}
+                                  className={`symptom-tag${active ? ` symptom-tag--active symptom-tag--${s.severity}` : ''}`}
+                                  type="button"
+                                  onClick={() => toggleSymptom(s.name)}
+                                >
+                                  {s.name}
+                                </button>
+                              )
+                            })}
+                          </div>
+                        ) : null}
+                      </div>
                     )
                   })}
+                  <div className="step-section-label" style={{ marginTop: 8 }}>Selected: {form.symptoms.length} symptom(s)</div>
                 </div>
-              </div>
-
-              <div className="modal-vitals">
-                <CompactVitalInput
-                  label="HR"
-                  unit="bpm"
-                  value={form.vitals.heartRate}
-                  onChange={(value) => updateVital('heartRate', value)}
-                />
-                <CompactVitalInput
-                  label="SpO₂"
-                  unit="%"
-                  value={form.vitals.spo2}
-                  onChange={(value) => updateVital('spo2', value)}
-                />
-                <CompactVitalInput
-                  label="SYS"
-                  unit="mmHg"
-                  value={form.vitals.systolic}
-                  onChange={(value) => updateVital('systolic', value)}
-                />
-                <CompactVitalInput
-                  label="DIA"
-                  unit="mmHg"
-                  value={form.vitals.diastolic}
-                  onChange={(value) => updateVital('diastolic', value)}
-                />
-                <CompactVitalInput
-                  label="TEMP"
-                  unit="C"
-                  value={form.vitals.temperature}
-                  onChange={(value) => updateVital('temperature', value)}
-                />
-                <CompactVitalInput
-                  label="RR"
-                  unit="/min"
-                  value={form.vitals.respiratoryRate}
-                  onChange={(value) => updateVital('respiratoryRate', value)}
-                />
-              </div>
-
-              {assessment ? (
-                <div className={`assessment-preview assessment-preview--${modalBand}`}>
-                  <strong>{assessment.patient.summary}</strong>
-                  <span>{assessment.patient.department.primary}</span>
-                  <p>{assessment.patient.triageReasoning}</p>
+              ) : wizardStep === 3 ? (
+                <div className="wizard-form">
+                  <div className="step-section-label">Vitals</div>
+                  <div className="three-col">
+                    <label><span>HR (bpm)</span><input type="number" value={form.vitals.heartRate} onChange={(e) => updateVital('heartRate', e.target.value)} /></label>
+                    <label><span>SpO₂ (%)</span><input type="number" value={form.vitals.spo2} onChange={(e) => updateVital('spo2', e.target.value)} /></label>
+                    <label><span>Temp (°C)</span><input type="number" step="0.1" value={form.vitals.temperature} onChange={(e) => updateVital('temperature', e.target.value)} /></label>
+                  </div>
+                  <div className="three-col">
+                    <label><span>Systolic</span><input type="number" value={form.vitals.systolic} onChange={(e) => updateVital('systolic', e.target.value)} /></label>
+                    <label><span>Diastolic</span><input type="number" value={form.vitals.diastolic} onChange={(e) => updateVital('diastolic', e.target.value)} /></label>
+                    <label><span>RR (/min)</span><input type="number" value={form.vitals.respiratoryRate} onChange={(e) => updateVital('respiratoryRate', e.target.value)} /></label>
+                  </div>
+                  <div className="step-section-label">Anthropometric</div>
+                  <div className="two-col">
+                    <label><span>Height (cm)</span><input type="number" value={form.height} onChange={(e) => updateFormField('height', e.target.value)} /></label>
+                    <label><span>Weight (kg)</span><input type="number" value={form.weight} onChange={(e) => updateFormField('weight', e.target.value)} /></label>
+                  </div>
+                  {form.height && form.weight ? (
+                    <BmiDisplay height={Number(form.height)} weight={Number(form.weight)} />
+                  ) : null}
+                  <div className="pain-scale-row">
+                    <label>Pain Scale (0–10)</label>
+                    <div className="pain-scale-track">
+                      <input type="range" min="0" max="10" value={form.painScale} onChange={(e) => updateFormField('painScale', Number(e.target.value))} />
+                      <span className="pain-scale-value">{form.painScale}</span>
+                    </div>
+                  </div>
                 </div>
-              ) : null}
+              ) : wizardStep === 4 ? (
+                <div className="wizard-form">
+                  <div className="step-section-label">Chronic Conditions</div>
+                  <div className="chip-group">
+                    {['Diabetes', 'Hypertension', 'CAD', 'Asthma', 'CKD', 'Cancer', 'None'].map((c) => (
+                      <button
+                        key={c}
+                        type="button"
+                        className={`chip${form.medicalHistory.includes(c) ? ' chip--active' : ''}`}
+                        onClick={() => setForm((prev) => ({ ...prev, medicalHistory: prev.medicalHistory.includes(c) ? prev.medicalHistory.filter((x) => x !== c) : [...prev.medicalHistory, c] }))}
+                      >{c}</button>
+                    ))}
+                  </div>
+                  <div className="field-group">
+                    <div className="field-group__label">Current Medications</div>
+                    <textarea value={form.medications} onChange={(e) => updateFormField('medications', e.target.value)} placeholder="List medications..." />
+                  </div>
+                  <div className="field-group">
+                    <div className="field-group__label">Known Allergies</div>
+                    <textarea value={form.allergies} onChange={(e) => updateFormField('allergies', e.target.value)} placeholder="List allergies..." />
+                  </div>
+                  <div className="step-section-label">Family History</div>
+                  <div className="chip-group">
+                    {['Heart disease', 'Diabetes', 'Stroke', 'Cancer', 'None'].map((f) => (
+                      <button
+                        key={f}
+                        type="button"
+                        className={`chip${form.familyHistory.includes(f) ? ' chip--active' : ''}`}
+                        onClick={() => setForm((prev) => ({ ...prev, familyHistory: prev.familyHistory.includes(f) ? prev.familyHistory.filter((x) => x !== f) : [...prev.familyHistory, f] }))}
+                      >{f}</button>
+                    ))}
+                  </div>
+                  <div className="step-section-label">Lifestyle</div>
+                  <div className="field-group"><div className="field-group__label">Smoking</div>
+                    <div className="radio-group">
+                      {(['Never', 'Former', 'Current'] as const).map((v) => (
+                        <button key={v} type="button" className={`radio-chip${form.smoking === v ? ' radio-chip--selected' : ''}`} onClick={() => updateFormField('smoking', v)}>{v}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="field-group"><div className="field-group__label">Alcohol</div>
+                    <div className="radio-group">
+                      {(['None', 'Occasional', 'Regular'] as const).map((v) => (
+                        <button key={v} type="button" className={`radio-chip${form.alcohol === v ? ' radio-chip--selected' : ''}`} onClick={() => updateFormField('alcohol', v)}>{v}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="field-group"><div className="field-group__label">Physical Activity</div>
+                    <div className="radio-group">
+                      {(['Sedentary', 'Light', 'Moderate', 'Active'] as const).map((v) => (
+                        <button key={v} type="button" className={`radio-chip${form.exercise === v ? ' radio-chip--selected' : ''}`} onClick={() => updateFormField('exercise', v)}>{v}</button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="wizard-form assessment-step-preview">
+                  {!assessment ? (
+                    <>
+                      <div className="assessment-block">
+                        <div className="assessment-block__label">Ready to assess</div>
+                        <p>{form.name}, {form.age}y {form.sex} &mdash; {form.chiefComplaint}. {form.symptoms.length} symptom(s) selected.</p>
+                      </div>
+                      <button
+                        className="run-assess-btn"
+                        type="button"
+                        onClick={() => void handleRunAssessment()}
+                        disabled={assessing || form.symptoms.length === 0}
+                      >
+                        {assessing ? 'Running AI Assessment…' : 'Run AI Assessment'}
+                      </button>
+                      {form.symptoms.length === 0 ? <p className="inline-err">Select at least one symptom in Step 2 to run assessment.</p> : null}
+                    </>
+                  ) : (
+                    <>
+                      <div className="assessment-block">
+                        <div className="assessment-block__label">AI Summary</div>
+                        <p>{assessment.patient.summary}</p>
+                      </div>
+                      <div className="assessment-block">
+                        <div className="assessment-block__label">Triage Reasoning</div>
+                        <p>{assessment.patient.triageReasoning}</p>
+                      </div>
+                      <div className="assessment-block">
+                        <div className="assessment-block__label">Routed To</div>
+                        <p>{assessment.patient.department.primary} → {assessment.patient.department.secondary}</p>
+                      </div>
+                      {latestTriage?.safetyNote ? <div className="safety-note">{latestTriage.safetyNote}</div> : null}
+                      <button
+                        className={`admit-btn admit-btn--${modalBand}`}
+                        type="button"
+                        onClick={() => void handleAdmitPatient()}
+                        disabled={submitting}
+                      >
+                        {submitting ? 'Admitting Patient…' : 'Admit Patient'}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
 
-              <div className="modal-actions">
+            <div className="wizard-nav">
+              {wizardStep > 1 ? (
+                <button className="wizard-nav__back" type="button" onClick={() => setWizardStep((s) => (s - 1) as WizardStep)}>&#8592; Back</button>
+              ) : <span />}
+              {wizardStep < 5 ? (
                 <button
-                  className="modal-button modal-button--assessment"
+                  className="wizard-nav__next"
                   type="button"
-                  onClick={() => void handleRunAssessment()}
-                  disabled={assessing || form.symptoms.length === 0}
+                  disabled={wizardStep === 1 && (!form.name || !form.age || !form.chiefComplaint)}
+                  onClick={() => setWizardStep((s) => (s + 1) as WizardStep)}
                 >
-                  {assessing ? 'Running AI Assessment' : 'Run AI Assessment'}
+                  Next &#8594;
                 </button>
-                <button
-                  className={`modal-button modal-button--admit modal-button--${modalBand}`}
-                  type="submit"
-                  disabled={submitting || !assessment}
-                >
-                  {submitting ? 'Admitting Patient' : 'Admit Patient'}
-                </button>
-              </div>
-            </form>
+              ) : null}
+            </div>
           </div>
         </div>
       ) : null}
@@ -696,12 +916,42 @@ function App() {
 
   function handleOpenModal() {
     setIsModalOpen(true)
+    setWizardStep(1)
     setError(null)
   }
 
   function handleCloseModal() {
     setIsModalOpen(false)
     setAssessment(null)
+    setWizardStep(1)
+  }
+
+  function toggleDomain(label: string) {
+    setOpenDomains((prev) => {
+      const next = new Set(prev)
+      if (next.has(label)) next.delete(label)
+      else next.add(label)
+      return next
+    })
+  }
+
+  function handleGlobalChatSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!globalChatInput.trim()) return
+    const userMsg: ChatMessage = { id: `u-${Date.now()}`, role: 'user', text: globalChatInput.trim() }
+    const queue = dashboard?.queue ?? []
+    const criticalPts = queue.filter((p) => p.priorityLevel === 'Critical')
+    const busyDepts = (dashboard?.departments ?? []).filter((d) => d.pressure !== 'Stable')
+    let reply = `Reviewing current queue of ${queue.length} patients.`
+    const q = globalChatInput.toLowerCase()
+    if (q.includes('critical')) reply = criticalPts.length > 0 ? `${criticalPts.length} critical patient(s): ${criticalPts.map((p) => p.name).join(', ')}.` : 'No critical patients at this time.'
+    else if (q.includes('wait') || q.includes('average')) reply = `Average wait is ${dashboard?.metrics.avgWaitMinutes ?? '—'}m. Routed this hour: ${dashboard?.metrics.routedThisHour ?? '—'}.`
+    else if (q.includes('department') || q.includes('load')) reply = busyDepts.length > 0 ? `Busy departments: ${busyDepts.map((d) => `${d.name} (${d.pressure})`).join(', ')}.` : 'All departments are currently stable.'
+    else if (q.includes('escalation')) reply = `Current escalation rate: ${dashboard?.metrics.escalationRate ?? '—'}%.`
+    else if (q.includes('queue') || q.includes('total')) reply = `Total queue: ${dashboard?.metrics.totalQueue ?? '—'} patients. Monitored: ${dashboard?.metrics.monitoredPatients ?? '—'}.`
+    const aiMsg: ChatMessage = { id: `a-${Date.now() + 1}`, role: 'ai', text: reply }
+    setGlobalChatMessages((prev) => [...prev, userMsg, aiMsg])
+    setGlobalChatInput('')
   }
 
   async function handleRunAssessment() {
@@ -733,8 +983,7 @@ function App() {
     }
   }
 
-  async function handleAdmitPatient(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
+  async function handleAdmitPatient() {
     setSubmitting(true)
     setError(null)
 
@@ -1344,4 +1593,133 @@ async function requestDashboard() {
   }
 
   return (await response.json()) as DashboardSnapshot
+}
+
+function DepartmentsView({ departments }: { departments: DepartmentLoad[] }) {
+  return (
+    <div className="departments-panel">
+      <div className="section-label">Department Overview</div>
+      <h1>All Departments</h1>
+      <div className="departments-grid">
+        {departments.map((dept) => (
+          <div key={dept.name} className="dept-card">
+            <div className="dept-card__header">
+              <span className="dept-card__name">{dept.name}</span>
+              <span className={`dept-card__pressure dept-card__pressure--${dept.pressure}`}>
+                {dept.pressure}
+              </span>
+            </div>
+            <div className="dept-card__bar-track">
+              <div
+                className={`dept-card__bar-fill dept-card__bar-fill--${dept.pressure}`}
+                style={{ width: `${Math.min(dept.occupancy, 100)}%` }}
+              />
+            </div>
+            <div className="dept-card__stats">
+              <div className="dept-card__stat">
+                <span className="dept-card__stat-label">Occupancy</span>
+                <span className="dept-card__stat-value">{dept.occupancy}%</span>
+              </div>
+              <div className="dept-card__stat">
+                <span className="dept-card__stat-label">Queue</span>
+                <span className="dept-card__stat-value">{dept.queue}</span>
+              </div>
+              <div className="dept-card__stat">
+                <span className="dept-card__stat-label">Staffed</span>
+                <span className="dept-card__stat-value">{dept.staffedUnits}</span>
+              </div>
+            </div>
+            <div className="dept-card__window">Next window: {dept.nextWindow}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function RoutingView({ queue }: { queue: PatientQueueItem[] }) {
+  return (
+    <div className="routing-panel">
+      <div className="section-label">Dispatch Board</div>
+      <h1>Patient Routing</h1>
+      <div className="routing-dispatch-list">
+        {queue.length === 0 ? (
+          <div className="queue-empty">NO PATIENTS IN QUEUE.</div>
+        ) : null}
+        {queue.map((patient) => (
+          <div key={patient.id} className="routing-dispatch-row">
+            <div className="routing-dispatch-row__patient">
+              <strong>{patient.name}</strong>
+              <span>{patient.age}y · {patient.priorityLevel}</span>
+            </div>
+            <span className="routing-dispatch-row__arrow">&#8594;</span>
+            <div className="routing-dispatch-row__dept">
+              <strong>{patient.department.primary}</strong>
+              <span>{patient.queueStage}</span>
+            </div>
+            <span className="routing-dispatch-row__secondary">
+              Backup: {patient.department.secondary}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function ChatViewPanel({
+  messages,
+  input,
+  onInputChange,
+  onSubmit,
+}: {
+  messages: ChatMessage[]
+  input: string
+  onInputChange: (v: string) => void
+  onSubmit: (e: FormEvent<HTMLFormElement>) => void
+}) {
+  return (
+    <div className="chat-view-panel">
+      <div className="section-label">AI Command Hub Chat</div>
+      <h1 style={{ marginBottom: 8 }}>AI Clinical Assistant</h1>
+      <div className="chat-view-thread">
+        {messages.map((msg) => (
+          <div
+            key={msg.id}
+            className={`chat-view-bubble chat-view-bubble--${msg.role === 'ai' ? 'ai' : 'user'}`}
+          >
+            {msg.role === 'ai' ? (
+              <span className="chat-view-bubble__label">KGMU AI</span>
+            ) : null}
+            <p>{msg.text}</p>
+          </div>
+        ))}
+      </div>
+      <form className="chat-view-form" onSubmit={onSubmit}>
+        <input
+          value={input}
+          onChange={(e) => onInputChange(e.target.value)}
+          placeholder="Ask about queue, critical patients, department load, escalation..."
+        />
+        <button type="submit">Send</button>
+      </form>
+    </div>
+  )
+}
+
+function BmiDisplay({ height, weight }: { height: number; weight: number }) {
+  if (!height || !weight || height <= 0 || weight <= 0) return null
+  const bmi = weight / ((height / 100) * (height / 100))
+  let category = 'Normal'
+  let cls = 'normal'
+  if (bmi < 18.5) { category = 'Underweight'; cls = 'underweight' }
+  else if (bmi >= 25 && bmi < 30) { category = 'Overweight'; cls = 'overweight' }
+  else if (bmi >= 30) { category = 'Obese'; cls = 'obese' }
+  return (
+    <div className="bmi-display">
+      <span className="bmi-display__label">BMI</span>
+      <span className="bmi-display__value">{bmi.toFixed(1)}</span>
+      <span className={`bmi-display__category bmi-display__category--${cls}`}>{category}</span>
+    </div>
+  )
 }
